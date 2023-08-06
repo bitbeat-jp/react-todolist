@@ -4,7 +4,7 @@ export const Todo = ({ todo, toggleTodo }) => {
   };
 
   return (
-    <li class="flex items-center grid grid-flow-col auto-cols-auto gap-2">
+    <li class="flex items-center grid grid-flow-col auto-cols-fr gap-2">
       <div>
         <input
           id={"Todo_" + todo.id}

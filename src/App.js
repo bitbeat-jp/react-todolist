@@ -2,12 +2,23 @@ import { useState, useRef, useEffect } from "react";
 import "./styles.css";
 import "react-notifications/lib/notifications.css";
 import { TodoList } from "./TodoList";
-import { v4 as uuidv4 } from "uuid";
+// import { v4 as uuidv4 } from "uuid";
 import DatePicker from "react-datetime-picker";
 import {
   NotificationContainer,
   NotificationManager
 } from "react-notifications";
+import { db } from "./FirebaseConfig";
+import {
+  collection,
+  addDoc,
+  query,
+  onSnapshot,
+  orderBy,
+  doc,
+  updateDoc,
+  deleteDoc
+} from "firebase/firestore";
 
 export const App = () => {
   const [todos, setTodos] = useState([]);
@@ -16,26 +27,56 @@ export const App = () => {
 
   const todoNameRef = useRef();
 
+  // Firestoreにタスクを登録する
+  const addTodoToFirestore = (todo) => {
+    return addDoc(collection(db, "todos"), {
+      name: todo.name,
+      completed: todo.completed,
+      alarmDateTime: todo.alarmDateTime
+    });
+  };
+
+  // Firestoreのタスクを更新する
+  const updateTodoInFirestore = (todo) => {
+    return updateDoc(doc(db, "todos", todo.id), {
+      name: todo.name,
+      completed: todo.completed,
+      alarmDateTime: todo.alarmDatetime
+    });
+  };
+
+  // Firestoreのタスクを削除する
+  const deleteTodoInFirestore = (id) => {
+    return deleteDoc(doc(db, "todos", id));
+  };
+
   const handlePickDateTime = (datetime) => {
     // 通知日時を登録する
     setTodoAlarmDateTime(datetime);
   };
 
-  const handleAddTodo = () => {
-    // タスクを追加する
+  // タスクを追加する
+  const handleAddTodo = async () => {
     const name = todoNameRef.current.value;
     if (name === "") return;
-    setTodos((prevTodos) => {
-      return [
-        ...prevTodos,
-        {
-          id: uuidv4(),
-          name: name,
-          completed: false,
-          alarmDateTime: todoAlarmDateTime
-        }
-      ];
-    });
+    addTodoToFirestore({
+      name: name,
+      completed: false,
+      alarmDateTime: todoAlarmDateTime
+    })
+      .then((value) => console.log(value))
+      .catch((err) => console.log(err));
+    // setTodos((prevTodos) => {
+    //   return [
+    //     ...prevTodos,
+    //     {
+    //       id: uuidv4(),
+    //       name: name,
+    //       completed: false,
+    //       alarmDateTime: todoAlarmDateTime
+    //     }
+    //   ];
+    // });
     todoNameRef.current.value = null;
     setTodoAlarmDateTime(null);
   };
@@ -44,12 +85,22 @@ export const App = () => {
     const newTodos = [...todos];
     const todo = newTodos.find((todo) => todo.id === id);
     todo.completed = !todo.completed;
-    setTodos(newTodos);
+    // setTodos(newTodos);
+    updateTodoInFirestore(todo)
+      .then((value) => console.log(value))
+      .catch((err) => console.log(err));
   };
 
   const handleClear = () => {
-    const newTodos = todos.filter((todo) => !todo.completed);
-    setTodos(newTodos);
+    // const newTodos = todos.filter((todo) => !todo.completed);
+    // setTodos(newTodos);
+    todos
+      .filter((todo) => todo.completed)
+      .forEach((todo) => {
+        deleteTodoInFirestore(todo.id)
+          .then((value) => console.log(value))
+          .catch((err) => console.log(err));
+      });
   };
 
   const formatDatetime = (datetime, withSecond) => {
@@ -70,12 +121,14 @@ export const App = () => {
     );
   };
 
+  // 初期化処理
   useEffect(() => {
+    // アラームの設定（1秒ごとに通知日時の判定・通知表示10秒間）
     setInterval(() => {
       todos
         .filter(
           (todo) =>
-            formatDatetime(todo.alarmDateTime, true) ===
+            formatDatetime(new Date(todo.alarmDateTime), true) ===
             formatDatetime(new Date(), true)
         )
         .forEach((todo) =>
@@ -86,6 +139,29 @@ export const App = () => {
           )
         );
     }, 1000);
+
+    // タスクリストをFirestoreから取得
+    const q = query(collection(db, "todos"), orderBy("alarmDateTime", "asc"));
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      setTodos(
+        snapshot.docs.map((doc) => {
+          const data = doc.data();
+          const alarmDateTime = data.alarmDateTime
+            ? data.alarmDateTime.toDate()
+            : data.alarmDateTime;
+          return {
+            id: doc.id,
+            name: data.name,
+            completed: data.completed,
+            alarmDateTime: alarmDateTime
+          };
+        })
+      );
+    });
+
+    return () => {
+      unsubscribe();
+    };
   });
 
   return (
